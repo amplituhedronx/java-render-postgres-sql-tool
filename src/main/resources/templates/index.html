@@ -24,8 +24,12 @@
         <div class="text-xs px-3 py-1 bg-zinc-900 border border-zinc-700 rounded-full">v1</div>
     </div>
 
+    <!-- Input Form -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
-        <form hx-post="/execute" hx-target="#results" hx-swap="innerHTML" class="space-y-4">
+        <form hx-post="/execute" 
+              hx-target="#message" 
+              hx-swap="innerHTML"
+              class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-2 text-orange-400">Native SQL Query</label>
                 <textarea name="sql" rows="8" required
@@ -40,56 +44,79 @@
         </form>
     </div>
 
-    <!-- Results Area -->
+    <!-- Status / Error Message Area (updated on every submit) -->
+    <div id="message" class="mt-6"></div>
+
+    <!-- Persistent Results Area (only updated on successful queries via hx-swap-oob) -->
     <div id="results" class="mt-8">
-        <!-- Populated by HTMX fragment -->
+        <div class="text-zinc-500 text-sm italic px-1">Results from your last successful query will appear here.</div>
     </div>
 </div>
 
-<!-- Results Fragment -->
+<!-- Results Fragment (returned by HTMX) -->
 <div th:fragment="results" th:if="${result != null}">
-    <div th:if="${result.success()}" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="status-success text-xl">✓</div>
-            <div>
+
+    <!-- Success Banner -->
+    <div th:if="${result.success()}" 
+         class="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 mb-6">
+        <div class="flex items-center gap-3">
+            <div class="status-success text-2xl">✓</div>
+            <div class="flex-1">
                 <span class="font-semibold text-lg" th:text="${result.message()}"></span>
-                <span class="text-zinc-400 ml-2" th:text="'(' + ${result.affectedRows()} + ' rows)' "></span>
+                <span class="text-zinc-400 ml-2" th:text="'(' + ${result.affectedRows()} + ' rows affected)' "></span>
             </div>
-        </div>
-
-        <div th:if="${result.rows() != null and !result.rows().isEmpty()}" class="overflow-auto max-h-[500px] border border-zinc-700 rounded-xl">
-            <table class="result-table w-full text-sm">
-                <thead class="bg-zinc-950 sticky top-0">
-                    <tr>
-                        <th th:each="col : ${result.rows()[0].keySet()}" 
-                            class="px-4 py-3 text-left font-medium text-orange-400 border-b border-zinc-700" 
-                            th:text="${col}"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr th:each="row : ${result.rows()}" class="border-b border-zinc-800 hover:bg-zinc-950">
-                        <td th:each="entry : ${row}" 
-                            class="px-4 py-3 font-mono text-xs text-zinc-300" 
-                            th:text="${entry.value} ?: ''"></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div th:if="${result.rows() == null or result.rows().isEmpty()}" class="text-zinc-400 text-sm">
-            No rows returned.
+            <div class="text-xs px-3 py-1 bg-zinc-800 text-zinc-400 rounded-full">Success</div>
         </div>
     </div>
 
-    <div th:if="${!result.success()}" class="bg-red-950 border border-red-900 rounded-2xl p-6">
+    <!-- Error Banner -->
+    <div th:if="${!result.success()}" 
+         class="bg-red-950 border border-red-900 rounded-2xl p-5 mb-6">
         <div class="flex items-start gap-3">
-            <div class="text-red-500 text-xl mt-0.5">✕</div>
-            <div>
+            <div class="text-red-500 text-2xl mt-0.5">✕</div>
+            <div class="flex-1">
                 <div class="font-semibold text-red-400">Error executing query</div>
-                <div class="text-red-300 mt-1 text-sm font-mono" th:text="${result.message()}"></div>
+                <div class="text-red-300 mt-1 text-sm font-mono break-all" th:text="${result.message()}"></div>
+            </div>
+            <div class="text-xs px-3 py-1 bg-red-900 text-red-400 rounded-full">Error</div>
+        </div>
+    </div>
+
+    <!-- Out-of-band update: Only replace #results on success -->
+    <div th:if="${result.success() and result.rows() != null and !result.rows().isEmpty()}" 
+         id="results" 
+         hx-swap-oob="true">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+            <div class="overflow-auto max-h-[600px] border border-zinc-700 rounded-xl">
+                <table class="result-table w-full text-sm">
+                    <thead class="bg-zinc-950 sticky top-0">
+                        <tr>
+                            <th th:each="col : ${result.rows()[0].keySet()}" 
+                                class="px-4 py-3 text-left font-medium text-orange-400 border-b border-zinc-700" 
+                                th:text="${col}"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr th:each="row : ${result.rows()}" class="border-b border-zinc-800 hover:bg-zinc-950">
+                            <td th:each="entry : ${row}" 
+                                class="px-4 py-3 font-mono text-xs text-zinc-300" 
+                                th:text="${entry.value} ?: ''"></td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
+
+    <!-- Placeholder when success but no rows -->
+    <div th:if="${result.success() and (result.rows() == null or result.rows().isEmpty())}" 
+         id="results" 
+         hx-swap-oob="true">
+        <div class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 text-zinc-400 text-sm">
+            Query executed successfully but returned no rows.
+        </div>
+    </div>
+
 </div>
 
 </body>
