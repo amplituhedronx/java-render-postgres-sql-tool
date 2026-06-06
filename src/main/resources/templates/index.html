@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Render SQL Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <style>
+        body { background-color: #0f0f0f; color: #f97316; }
+        .orange-accent { color: #f97316; }
+        textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        .result-table th, .result-table td { border-color: #3f3f3f; }
+        .status-success { color: #22c55e; }
+        .status-error { color: #ef4444; }
+    </style>
+</head>
+<body class="bg-zinc-950 text-orange-500">
+<div class="max-w-5xl mx-auto p-8">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-4xl font-bold tracking-tight">Render Postgres SQL Tool</h1>
+            <p class="text-zinc-400 text-sm mt-1">Lightweight • Dark Mode • Orange</p>
+        </div>
+        <div class="text-xs px-3 py-1 bg-zinc-900 border border-zinc-700 rounded-full">v1</div>
+    </div>
+
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+        <form hx-post="/execute" hx-target="#results" hx-swap="innerHTML" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-2 text-orange-400">Native SQL Query</label>
+                <textarea name="sql" rows="8" required
+                          class="w-full bg-zinc-950 border border-zinc-700 text-orange-400 font-mono text-sm p-4 rounded-xl focus:outline-none focus:border-orange-500 placeholder-zinc-500"
+                          placeholder="SELECT * FROM your_table LIMIT 20;"></textarea>
+            </div>
+
+            <button type="submit"
+                    class="w-full bg-orange-600 hover:bg-orange-700 active:bg-orange-800 transition-all text-white font-semibold py-3.5 rounded-xl text-lg shadow-lg">
+                Execute Query
+            </button>
+        </form>
+    </div>
+
+    <!-- Results Area -->
+    <div id="results" class="mt-8">
+        <!-- Populated by HTMX fragment -->
+    </div>
+</div>
+
+<!-- Results Fragment -->
+<div th:fragment="results" th:if="${result != null}">
+    <div th:if="${result.success()}" class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
+        <div class="flex items-center gap-3 mb-4">
+            <div class="status-success text-xl">✓</div>
+            <div>
+                <span class="font-semibold text-lg" th:text="${result.message()}"></span>
+                <span class="text-zinc-400 ml-2" th:text="'(' + ${result.affectedRows()} + ' rows)' "></span>
+            </div>
+        </div>
+
+        <div th:if="${result.rows() != null and !result.rows().isEmpty()}" class="overflow-auto max-h-[500px] border border-zinc-700 rounded-xl">
+            <table class="result-table w-full text-sm">
+                <thead class="bg-zinc-950 sticky top-0">
+                    <tr>
+                        <th th:each="col : ${result.rows()[0].keySet()}" 
+                            class="px-4 py-3 text-left font-medium text-orange-400 border-b border-zinc-700" 
+                            th:text="${col}"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="row : ${result.rows()}" class="border-b border-zinc-800 hover:bg-zinc-950">
+                        <td th:each="col : ${result.rows()[0].keySet()}" 
+                            class="px-4 py-3 font-mono text-xs text-zinc-300" 
+                            th:text="${row[col]}"></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div th:if="${result.rows() == null or result.rows().isEmpty()}" class="text-zinc-400 text-sm">
+            No rows returned.
+        </div>
+    </div>
+
+    <div th:if="${!result.success()}" class="bg-red-950 border border-red-900 rounded-2xl p-6">
+        <div class="flex items-start gap-3">
+            <div class="text-red-500 text-xl mt-0.5">✕</div>
+            <div>
+                <div class="font-semibold text-red-400">Error executing query</div>
+                <div class="text-red-300 mt-1 text-sm font-mono" th:text="${result.message()}"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function initTailwind.  ) {
+        // Optional: further tailwind config if needed
+    }
+    initTailwind();
+</script>
+</body>
+</html> 
