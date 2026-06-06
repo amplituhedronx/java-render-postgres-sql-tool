@@ -175,7 +175,6 @@
             timestamp: new Date().toISOString()
         });
 
-        // Keep only the latest MAX_HISTORY items
         if (history.length > MAX_HISTORY) {
             history = history.slice(0, MAX_HISTORY);
         }
@@ -219,22 +218,23 @@
         emptyState.style.display = 'none';
         countBadge.textContent = history.length;
 
-        history.forEach((item, index) => {
+        history.forEach((item) => {
             const div = document.createElement('div');
             div.className = 'history-item flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-zinc-800 hover:border-zinc-700';
 
+            // Use data-sql attribute to avoid JS injection issues with quotes etc.
             div.innerHTML = `
-                <div class="flex-1 min-w-0 cursor-pointer" onclick="runFromHistory('${escapeForJs(item.sql)}')">
+                <div class="flex-1 min-w-0 cursor-pointer run-btn" data-sql="${escapeHtml(item.sql)}">
                     <div class="font-mono text-xs text-orange-300 truncate">${truncateQuery(item.sql)}</div>
                     <div class="text-[10px] text-zinc-500 mt-0.5">${formatTimeAgo(item.timestamp)}</div>
                 </div>
                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                    <button onclick="event.stopImmediatePropagation(); runFromHistory('${escapeForJs(item.sql)}')" 
-                            class="px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
+                    <button class="run-btn px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors" 
+                            data-sql="${escapeHtml(item.sql)}">
                         Run
                     </button>
-                    <button onclick="event.stopImmediatePropagation(); copyFromHistory('${escapeForJs(item.sql)}')" 
-                            class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors">
+                    <button class="copy-btn px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors" 
+                            data-sql="${escapeHtml(item.sql)}">
                         Copy
                     </button>
                 </div>
@@ -243,40 +243,57 @@
         });
     }
 
-    function escapeForJs(str) {
-        return str.replace(/'/g, "\\'").replace(/"/g, '"');
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, '&')
+            .replace(/</g, '<')
+            .replace(/>/g, '>')
+            .replace(/"/g, '"')
+            .replace(/'/g, '&#039;');
     }
+
+    // Event delegation for Run and Copy buttons
+    document.getElementById('history-list').addEventListener('click', function(e) {
+        const runBtn = e.target.closest('.run-btn');
+        const copyBtn = e.target.closest('.copy-btn');
+
+        if (runBtn) {
+            const sql = runBtn.getAttribute('data-sql');
+            if (sql) runFromHistory(sql);
+        }
+
+        if (copyBtn) {
+            const sql = copyBtn.getAttribute('data-sql');
+            if (sql) copyFromHistory(sql);
+        }
+    });
 
     function runFromHistory(sql) {
         const textarea = document.getElementById('sql-input');
         textarea.value = sql;
         
-        // Scroll to top smoothly
         window.scrollTo({ top: 0, behavior: 'smooth' });
         
-        // Trigger HTMX form submission
         setTimeout(() => {
             document.getElementById('sql-form').requestSubmit();
-        }, 150);
+        }, 120);
     }
 
     function copyFromHistory(sql) {
         navigator.clipboard.writeText(sql).then(() => {
-            const originalText = event.currentTarget ? event.currentTarget.innerText : '';
-            // Simple feedback
             const toast = document.createElement('div');
-            toast.className = 'fixed bottom-4 right-4 bg-zinc-800 text-orange-400 text-xs px-4 py-2 rounded-xl border border-zinc-700';
+            toast.className = 'fixed bottom-4 right-4 bg-zinc-800 text-orange-400 text-xs px-4 py-2 rounded-xl border border-zinc-700 z-50';
             toast.textContent = 'Copied to clipboard';
             document.body.appendChild(toast);
             
             setTimeout(() => {
-                toast.style.transition = 'opacity 0.2s';
+                toast.style.transition = 'all 0.2s ease';
                 toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 200);
-            }, 1200);
+                setTimeout(() => toast.remove(), 150);
+            }, 1100);
         }).catch(() => {
-            // Fallback
-            prompt('Copy this query:', sql);
+            // Fallback for older browsers
+            const input = prompt('Copy this query:', sql);
         });
     }
 
@@ -300,7 +317,6 @@
         }
     });
 
-    // Load history on page load
     document.addEventListener('DOMContentLoaded', function() {
         renderHistory();
     });
