@@ -30,6 +30,29 @@
         <div class="text-xs px-3 py-1 bg-zinc-900 border border-zinc-700 rounded-full">v1</div>
     </div>
 
+    <!-- Recent Queries (moved to top) -->
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
+        <div class="flex items-center justify-between mb-3 px-1">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-orange-400">Recent Queries</span>
+                <span id="history-count" 
+                      class="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded-full">0</span>
+            </div>
+            <button onclick="clearHistory()"
+                    class="text-xs text-zinc-400 hover:text-red-400 transition-colors">
+                Clear all
+            </button>
+        </div>
+
+        <div id="history-list" 
+             class="max-h-[280px] overflow-y-auto pr-1 space-y-1 text-sm">
+            <!-- Populated by JavaScript -->
+        </div>
+        <div id="history-empty" class="px-1 py-4 text-center text-zinc-500 text-xs">
+            No queries yet. Execute a query to see it here.
+        </div>
+    </div>
+
     <!-- Input Form -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
         <form id="sql-form" hx-post="/execute" 
@@ -48,29 +71,6 @@
                 Execute Query
             </button>
         </form>
-    </div>
-
-    <!-- Query History -->
-    <div class="mt-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-        <div class="flex items-center justify-between mb-3 px-1">
-            <div class="flex items-center gap-2">
-                <span class="font-semibold text-orange-400">Recent Queries</span>
-                <span id="history-count" 
-                      class="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded-full">0</span>
-            </div>
-            <button onclick="clearHistory()"
-                    class="text-xs text-zinc-400 hover:text-red-400 transition-colors">
-                Clear all
-            </button>
-        </div>
-
-        <div id="history-list" 
-             class="max-h-[320px] overflow-y-auto pr-1 space-y-1 text-sm">
-            <!-- Populated by JavaScript -->
-        </div>
-        <div id="history-empty" class="px-1 py-4 text-center text-zinc-500 text-xs">
-            No queries yet. Execute a query to see it here.
-        </div>
     </div>
 
     <!-- Status / Error Message Area -->
@@ -144,7 +144,6 @@
 </div>
 
 <script>
-    // === Query History with localStorage ===
     const HISTORY_KEY = 'sql_tool_history';
     const MAX_HISTORY = 15;
 
@@ -165,20 +164,18 @@
         if (!sql || sql.trim().length === 0) return;
 
         let history = getHistory();
-
-        // Remove duplicate if same query was just run
         history = history.filter(item => item.sql !== sql);
+        history.unshift({ sql: sql, timestamp: new Date().toISOString() });
 
-        // Add new entry at the beginning
-        history.unshift({
-            sql: sql,
-            timestamp: new Date().toISOString()
-        });
+        if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
 
-        if (history.length > MAX_HISTORY) {
-            history = history.slice(0, MAX_HISTORY);
-        }
+        saveHistory(history);
+        renderHistory();
+    }
 
+    function deleteFromHistory(sqlToDelete) {
+        let history = getHistory();
+        history = history.filter(item => item.sql !== sqlToDelete);
         saveHistory(history);
         renderHistory();
     }
@@ -222,21 +219,15 @@
             const div = document.createElement('div');
             div.className = 'history-item flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-zinc-800 hover:border-zinc-700';
 
-            // Use data-sql attribute to avoid JS injection issues with quotes etc.
             div.innerHTML = `
                 <div class="flex-1 min-w-0 cursor-pointer run-btn" data-sql="${escapeHtml(item.sql)}">
                     <div class="font-mono text-xs text-orange-300 truncate">${truncateQuery(item.sql)}</div>
                     <div class="text-[10px] text-zinc-500 mt-0.5">${formatTimeAgo(item.timestamp)}</div>
                 </div>
                 <div class="flex items-center gap-1.5 flex-shrink-0">
-                    <button class="run-btn px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors" 
-                            data-sql="${escapeHtml(item.sql)}">
-                        Run
-                    </button>
-                    <button class="copy-btn px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors" 
-                            data-sql="${escapeHtml(item.sql)}">
-                        Copy
-                    </button>
+                    <button class="run-btn px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors" data-sql="${escapeHtml(item.sql)}">Run</button>
+                    <button class="copy-btn px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors" data-sql="${escapeHtml(item.sql)}">Copy</button>
+                    <button class="delete-btn px-2 py-1 text-xs text-red-400 hover:text-red-500 hover:bg-red-950 rounded-lg transition-colors" data-sql="${escapeHtml(item.sql)}">×</button>
                 </div>
             `;
             container.appendChild(div);
@@ -252,28 +243,27 @@
             .replace(/'/g, '&#039;');
     }
 
-    // Event delegation for Run and Copy buttons
+    // Event delegation
     document.getElementById('history-list').addEventListener('click', function(e) {
-        const runBtn = e.target.closest('.run-btn');
-        const copyBtn = e.target.closest('.copy-btn');
+        const target = e.target.closest('button, .run-btn');
+        if (!target) return;
 
-        if (runBtn) {
-            const sql = runBtn.getAttribute('data-sql');
-            if (sql) runFromHistory(sql);
-        }
+        const sql = target.getAttribute('data-sql');
+        if (!sql) return;
 
-        if (copyBtn) {
-            const sql = copyBtn.getAttribute('data-sql');
-            if (sql) copyFromHistory(sql);
+        if (target.classList.contains('run-btn') || target.closest('.run-btn')) {
+            runFromHistory(sql);
+        } else if (target.classList.contains('copy-btn')) {
+            copyFromHistory(sql);
+        } else if (target.classList.contains('delete-btn')) {
+            deleteFromHistory(sql);
         }
     });
 
     function runFromHistory(sql) {
         const textarea = document.getElementById('sql-input');
         textarea.value = sql;
-        
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        
         setTimeout(() => {
             document.getElementById('sql-form').requestSubmit();
         }, 120);
@@ -285,15 +275,13 @@
             toast.className = 'fixed bottom-4 right-4 bg-zinc-800 text-orange-400 text-xs px-4 py-2 rounded-xl border border-zinc-700 z-50';
             toast.textContent = 'Copied to clipboard';
             document.body.appendChild(toast);
-            
             setTimeout(() => {
                 toast.style.transition = 'all 0.2s ease';
                 toast.style.opacity = '0';
                 setTimeout(() => toast.remove(), 150);
             }, 1100);
         }).catch(() => {
-            // Fallback for older browsers
-            const input = prompt('Copy this query:', sql);
+            prompt('Copy this query:', sql);
         });
     }
 
@@ -304,7 +292,6 @@
         }
     }
 
-    // Auto-save successful queries to history
     document.body.addEventListener('htmx:afterSwap', function(evt) {
         if (evt.detail.target.id === 'message') {
             const successBanner = document.querySelector('#message .status-success');
