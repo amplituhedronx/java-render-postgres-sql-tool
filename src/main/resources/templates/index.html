@@ -12,6 +12,12 @@
         .result-table th, .result-table td { border-color: #3f3f3f; }
         .status-success { color: #22c55e; }
         .status-error { color: #ef4444; }
+        .history-item {
+            transition: background-color 0.1s ease;
+        }
+        .history-item:hover {
+            background-color: #27251f;
+        }
     </style>
 </head>
 <body class="bg-zinc-950 text-orange-500">
@@ -26,13 +32,13 @@
 
     <!-- Input Form -->
     <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
-        <form hx-post="/execute" 
+        <form id="sql-form" hx-post="/execute" 
               hx-target="#message" 
               hx-swap="innerHTML"
               class="space-y-4">
             <div>
                 <label class="block text-sm font-medium mb-2 text-orange-400">Native SQL Query</label>
-                <textarea name="sql" rows="8" required
+                <textarea id="sql-input" name="sql" rows="8" required
                           class="w-full bg-zinc-950 border border-zinc-700 text-orange-400 font-mono text-sm p-4 rounded-xl focus:outline-none focus:border-orange-500 placeholder-zinc-500"
                           placeholder="SELECT * FROM your_table LIMIT 20;"></textarea>
             </div>
@@ -44,18 +50,40 @@
         </form>
     </div>
 
-    <!-- Status / Error Message Area (updated on every submit) -->
+    <!-- Query History -->
+    <div class="mt-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+        <div class="flex items-center justify-between mb-3 px-1">
+            <div class="flex items-center gap-2">
+                <span class="font-semibold text-orange-400">Recent Queries</span>
+                <span id="history-count" 
+                      class="text-xs px-2 py-0.5 bg-zinc-800 text-zinc-400 rounded-full">0</span>
+            </div>
+            <button onclick="clearHistory()"
+                    class="text-xs text-zinc-400 hover:text-red-400 transition-colors">
+                Clear all
+            </button>
+        </div>
+
+        <div id="history-list" 
+             class="max-h-[320px] overflow-y-auto pr-1 space-y-1 text-sm">
+            <!-- Populated by JavaScript -->
+        </div>
+        <div id="history-empty" class="px-1 py-4 text-center text-zinc-500 text-xs">
+            No queries yet. Execute a query to see it here.
+        </div>
+    </div>
+
+    <!-- Status / Error Message Area -->
     <div id="message" class="mt-6"></div>
 
-    <!-- Persistent Results Area (only updated on successful queries via hx-swap-oob) -->
+    <!-- Persistent Results Area -->
     <div id="results" class="mt-8">
         <div class="text-zinc-500 text-sm italic px-1">Results from your last successful query will appear here.</div>
     </div>
 </div>
 
-<!-- Results Fragment (returned by HTMX) -->
+<!-- Results Fragment -->
 <div th:fragment="results" th:if="${result != null}">
-
     <!-- Success Banner -->
     <div th:if="${result.success()}" 
          class="bg-zinc-900 border border-zinc-700 rounded-2xl p-5 mb-6">
@@ -82,10 +110,9 @@
         </div>
     </div>
 
-    <!-- Out-of-band update: Only replace #results on success -->
+    <!-- Out-of-band results update -->
     <div th:if="${result.success() and result.rows() != null and !result.rows().isEmpty()}" 
-         id="results" 
-         hx-swap-oob="true">
+         id="results" hx-swap-oob="true">
         <div class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6">
             <div class="overflow-auto max-h-[600px] border border-zinc-700 rounded-xl">
                 <table class="result-table w-full text-sm">
@@ -108,16 +135,176 @@
         </div>
     </div>
 
-    <!-- Placeholder when success but no rows -->
     <div th:if="${result.success() and (result.rows() == null or result.rows().isEmpty())}" 
-         id="results" 
-         hx-swap-oob="true">
+         id="results" hx-swap-oob="true">
         <div class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 text-zinc-400 text-sm">
             Query executed successfully but returned no rows.
         </div>
     </div>
-
 </div>
+
+<script>
+    // === Query History with localStorage ===
+    const HISTORY_KEY = 'sql_tool_history';
+    const MAX_HISTORY = 15;
+
+    function getHistory() {
+        try {
+            const data = localStorage.getItem(HISTORY_KEY);
+            return data ? JSON.parse(data) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function saveHistory(history) {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function addToHistory(sql) {
+        if (!sql || sql.trim().length === 0) return;
+
+        let history = getHistory();
+
+        // Remove duplicate if same query was just run
+        history = history.filter(item => item.sql !== sql);
+
+        // Add new entry at the beginning
+        history.unshift({
+            sql: sql,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only the latest MAX_HISTORY items
+        if (history.length > MAX_HISTORY) {
+            history = history.slice(0, MAX_HISTORY);
+        }
+
+        saveHistory(history);
+        renderHistory();
+    }
+
+    function formatTimeAgo(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return 'just now';
+        if (diffMins < 60) return diffMins + 'm ago';
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return diffHours + 'h ago';
+        return date.toLocaleDateString();
+    }
+
+    function truncateQuery(query, maxLength = 95) {
+        if (query.length <= maxLength) return query;
+        return query.substring(0, maxLength) + '...';
+    }
+
+    function renderHistory() {
+        const container = document.getElementById('history-list');
+        const emptyState = document.getElementById('history-empty');
+        const countBadge = document.getElementById('history-count');
+        const history = getHistory();
+
+        container.innerHTML = '';
+
+        if (history.length === 0) {
+            emptyState.style.display = 'block';
+            countBadge.textContent = '0';
+            return;
+        }
+
+        emptyState.style.display = 'none';
+        countBadge.textContent = history.length;
+
+        history.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'history-item flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-zinc-800 hover:border-zinc-700';
+
+            div.innerHTML = `
+                <div class="flex-1 min-w-0 cursor-pointer" onclick="runFromHistory('${escapeForJs(item.sql)}')">
+                    <div class="font-mono text-xs text-orange-300 truncate">${truncateQuery(item.sql)}</div>
+                    <div class="text-[10px] text-zinc-500 mt-0.5">${formatTimeAgo(item.timestamp)}</div>
+                </div>
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                    <button onclick="event.stopImmediatePropagation(); runFromHistory('${escapeForJs(item.sql)}')" 
+                            class="px-3 py-1 text-xs bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
+                        Run
+                    </button>
+                    <button onclick="event.stopImmediatePropagation(); copyFromHistory('${escapeForJs(item.sql)}')" 
+                            class="px-3 py-1 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg transition-colors">
+                        Copy
+                    </button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function escapeForJs(str) {
+        return str.replace(/'/g, "\\'").replace(/"/g, '"');
+    }
+
+    function runFromHistory(sql) {
+        const textarea = document.getElementById('sql-input');
+        textarea.value = sql;
+        
+        // Scroll to top smoothly
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        
+        // Trigger HTMX form submission
+        setTimeout(() => {
+            document.getElementById('sql-form').requestSubmit();
+        }, 150);
+    }
+
+    function copyFromHistory(sql) {
+        navigator.clipboard.writeText(sql).then(() => {
+            const originalText = event.currentTarget ? event.currentTarget.innerText : '';
+            // Simple feedback
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-zinc-800 text-orange-400 text-xs px-4 py-2 rounded-xl border border-zinc-700';
+            toast.textContent = 'Copied to clipboard';
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.2s';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 200);
+            }, 1200);
+        }).catch(() => {
+            // Fallback
+            prompt('Copy this query:', sql);
+        });
+    }
+
+    function clearHistory() {
+        if (confirm('Clear all query history?')) {
+            localStorage.removeItem(HISTORY_KEY);
+            renderHistory();
+        }
+    }
+
+    // Auto-save successful queries to history
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'message') {
+            const successBanner = document.querySelector('#message .status-success');
+            if (successBanner) {
+                const textarea = document.getElementById('sql-input');
+                if (textarea && textarea.value.trim()) {
+                    addToHistory(textarea.value.trim());
+                }
+            }
+        }
+    });
+
+    // Load history on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        renderHistory();
+    });
+</script>
 
 </body>
 </html>
