@@ -68,9 +68,9 @@
                 </thead>
                 <tbody>
                     <tr th:each="row : ${result.rows()}" class="border-b border-zinc-800 hover:bg-zinc-950">
-                        <td th:each="col : ${result.rows()[0].keySet()}" 
+                        <td th:each="entry : ${row}" 
                             class="px-4 py-3 font-mono text-xs text-zinc-300" 
-                            th:text="${row[col]}"></td>
+                            th:text="${entry.value} ?: ''"></td>
                     </tr>
                 </tbody>
             </table>
